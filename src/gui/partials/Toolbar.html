@@ -1,0 +1,22 @@
+<nav class="navbar navbar-expand-sm navbar-dark bg-dark justify-content-between">
+
+    <a class="navbar-brand" href="#"><span class="mr-2" style="font-weight: bold; font-size: 18pt">DEDA<font color="#80BD01">js</font></span> Service Manager</a>
+
+    <div class="btn-toolbar" role="toolbar">
+        <div class="btn-group mr-2" role="group">
+            <button type="button" class="btn btn-sm" ng-click="control.create()" data-toggle="tooltip" title="Create/Add a new process to the service manager."><i class="fas fa-plus"></i> Add</button>
+            <button type="button" class="btn btn-sm" ng-click="control.refresh()" data-toggle="tooltip" title="Refresh the page to get the latest state from the service manager."><i class="fas fa-sync"></i> Refresh</button>
+        </div>
+
+        <div class="btn-group mr-2" role="group">
+            <button type="button" class="btn btn-sm" ng-click="control.startAll()" data-toggle="tooltip" title="Starts all processes that are not currently running."><i class="fas fa-play"></i> Start All</button>
+            <button type="button" class="btn btn-sm" ng-click="control.stopAll()" data-toggle="tooltip" title="Stops all currently running processes."><i class="fas fa-stop"></i> Stop All</button>
+            <button type="button" class="btn btn-sm" ng-click="control.restartAll()" data-toggle="tooltip" title="Restarts all processes even if they where not running."><i class="fas fa-retweet"></i></i> Restart All</button>
+        </div>
+
+        <div class="btn-group" role="group">
+            <button type="button" class="btn btn-sm" ng-click="control.about()" data-toggle="tooltip" title="Shows version information and application information."><i class="fas fa-info"></i> About</button>
+        </div>
+    </div>
+
+</nav>

@@ -1,0 +1,376 @@
+{
+"use strict";
+
+/**
+ * The namespace the contains all the Google Domain APIs and classes.
+ * @namespace DEDA-OS-Service
+ */
+
+// Define the required modules for this class.
+const fs = require('fs');
+const path = require('path');
+
+const Process = require('./Process');
+
+// Used for validation.
+const Joi = require('joi');
+
+/**
+ * The process/service manager has the following responsibilities:
+ * - Adding, updating, and removing processes/services.
+ * - Starting, Stopping, Restarting all processes at the same time.
+ * - Loading and saving options as the user updates the processes.
+ * - Logging errors and information to the global file as well as keeping track of a list of logs for the GUI to load.
+ * 
+ * Even though this may seen like a lot for a single class to do, it mealy manages sub classes that actually do the and
+ * and simply provide a center interface for them.
+ * 
+ * @class
+ * @memberof DEDA-OS-Service
+ * @author Charbel Choueiri <charbel.choueiri@gmail.com>
+ */
+class Manager
+{
+    /**
+     * Creates a new class with the given options.
+     * @param {DEDA-OS-Service.Manager.DefaultOptions} options See [getDefaultOptions()]{@link DEDA-OS-Service.Manager.getDefaultOptions} for more details.
+     */
+    constructor(options)
+    {
+        /**
+         * This is a list/map of all instances of the currently loaded processes with their options/configurations.
+         * @member {Map}
+         */
+        this.processes = new Map();
+
+        /**
+         * This is a list of the last options.maxLogCache logs written to the log file. This is used to send to the client for reference purposes.
+         * If the client or GUI wants the entire list they can load the log file content directly. All logs are stored in JSON with the following
+         * format: {type: <error|log>, dateTime: <number>, process: <string>, message: <string> }
+         * @member {Object[]}
+         */
+        this.logCache = new Array();
+
+        /**
+         * The full path of the options json file to load and save to. Whenever the user updates the configs they are
+         * automatically saved back to the options.json file.
+         * @member {string}
+         */
+        this.optionsPath = path.resolve(typeof(options) === 'string' ? options : './options.json');
+
+        /**
+         * Loads the version of the module to be sent to the client for the about and reporting.
+         * @member {string}
+         */
+        this.version = JSON.parse(fs.readFileSync(path.resolve(__filename, '../../package.json'), 'utf8')).version;
+
+
+        /**
+         * The class options as defined by [getDefaultOptions()]{@link DEDA-OS-Service.Manager.getDefaultOptions}
+         * On initialization the constructor options parameters are merged with the default options.
+         * @member {DEDA-OS-Service.Manager.DefaultOptions}
+         */
+        this.options = this.constructor.validateOptions(JSON.parse(fs.readFileSync(this.optionsPath, 'utf8')), true).value; 
+
+
+        // Loop through the process, create then and add them to the list.
+        for (let options of this.options.processes)
+        {
+            try {
+                // Create the process and add it the process list.
+                const process = new Process(options, this);
+                this.processes.set(process.options.name, process);
+
+                // If auto restart then start the process.
+                if (process.options.autoStart) process.start();
+
+            } catch (error) {
+                // If an error is generated then log it.
+                this.logError(`Error occurred while try to initializes process ${options.name}: ${error}`);
+            }
+        }
+    }
+
+    /**
+     * @typedef {Object} Options
+     * @property {number} [maxLogCache=1000] - Keeps track of the last 1000 log messages.
+     * @property {boolean} [onlyCacheErrorLogs = false] - indicates whether to only cache error logs or everything to the log cache.
+     * @property {string | boolean} [logPath = './logs.log'] - Used by the service. Defines the log output path. Set to false to disable output logs.
+     * @property {boolean} [logToConsole = true] - Used by the service. Defines whether to log output to the console or not.
+     * @memberof DEDA-OS-Service.Manager
+     */
+
+    /**
+     * Returns a list of all possible options for this class with their default values.
+     * @returns {DEDA-OS-Service.Manager.DefaultOptions} Returns the component default options.
+     */
+    static getDefaultOptions() { return Manager.validateOptions({}); }
+
+    /**
+     * Validates the given options object. If valid returns and object with the clean & validated values {value: {}}.
+     * Otherwise returns an error object {error: <object>}.
+     * @param {DEDA-OS-Service.Manager.DefaultOptions} options - The options object to validate.
+     * @param {boolean} [throwOnError = false] - If set to true throws an exception with the error.
+     * @returns {object} See method description.
+     */
+    static validateOptions(options, throwOnError = false)
+    {
+        const result = Joi.validate(options, Manager.getOptionsValidationSchema());
+        if (result.error && throwOnError) throw result.error;
+        else return result;
+    }
+
+    /**
+     * Returns the Joi validation object to validate this class's options/config.
+     * @returns {Joi.object} See method description.
+     */
+    static getOptionsValidationSchema()
+    {
+        return Joi.object().keys({
+            maxLogCache: Joi.number().integer().default(1000),
+            onlyCacheErrorLogs: Joi.boolean().default(false),
+            logPath: Joi.alternatives([Joi.boolean(), Joi.string().min(2)]).default('./logs.log'),
+            logToConsole: Joi.boolean().default(true),
+            processes: Joi.array().default([])
+        }).unknown(true);
+    }
+
+    /**
+     * Creates a new process/service within the manager and adds it to the options JSON file to auto load on start up next time.
+     * 
+     * @param {DEDA-OS-Service.Process.DefaultOptions} options - The process options to create.
+     * @returns {object} If successful returns {status: 'ok'}, otherwise returns an object {error: <message>}.
+     */
+    add(options)
+    {
+        // Validate the options, if options is not valid then return the error.
+        const result = Process.optionValidation(options);
+        if (result.error) return {error: result.error.toString()};
+        else options = result.value;
+
+        // If the process name already exists then return error.
+        if (this.processes.has(options.name)) return {error: `Process with the same name already exists: ${options.name}`};
+
+        // Create the process and add it the process list.
+        const process = new Process(options, this);
+        this.processes.set(process.options.name, process);
+
+        // Add the process options to the options process list and save the options back to file.
+        this.options.processes.push(options);
+        this.save();
+
+        // Return successful.
+        return {status: 'ok'};
+    }
+
+    /**
+     * Updates the current process data with the given options. If the process is to be renamed, use _name as the old name.
+     * If the process is running it will be restarted, it is up to the user to restart the process. The options JSON file is updated and saved.
+     * 
+     * @param {DEDA-OS-Service.Process.DefaultOptions} options - The process options to create.
+     * @returns {object} If successful returns {status: 'ok'}, otherwise returns an object {error: <message>}.
+     */
+    update(options)
+    {
+        // Store the old name if the name is changed.
+        const name = (options._name ? options._name : options.name);
+
+        // Validate the options, if options is not valid then return the error.
+        const result = Process.optionValidation(options);
+        if (result.error) return {error: result.error.toString()};
+        else options = result.value;
+
+        // If the process name does not exist then return error.
+        if (!this.processes.has(name)) return {error: `Process with the name ${name} does not exist.`};
+
+        // Get the process with the set name.
+        const process = this.processes.get(name);
+
+        // If the name has changed then update the name within the map.
+        if (name !== options.name)
+        {
+            // If the new name already exists then report error.
+            if (this.processes.has(options.name)) return {error: `Process with the same name already exists: ${options.name}`};
+
+            // Otherwise update the name.
+            this.processes.set(options.name, process);
+            this.processes.delete(name);
+        }
+
+        // Merge the new options with the current process options.
+        process.options = Object.assign(process.options, options);
+
+        // Update the options within the json file and save it.
+        const optionsIndex = this.options.processes.findIndex( process=>(process.name === name) );
+        if (optionsIndex !== -1)
+        {
+            // Remove the process options form the array, and save the options back to file.
+            this.options.processes[optionsIndex] = process.options;
+            this.save();
+        }
+
+        // Return successful.
+        return {status: 'ok'};
+    }
+
+    /**
+     * Removes the process with the given name. If the process is running it is stopped first. This will update the config JSON file.
+     * @param {string} name - The name of the process to remove.
+     * @returns {object} If successful returns {status: 'ok'}, otherwise returns an object {error: <message>}.
+     */
+    remove(name)
+    {
+        // Find the process with the given name. If not found return error.
+        let process = this.processes.get(name);
+        if (process)
+        {
+            // Terminate the process. Remove the process form the map.
+            process.stop();
+            this.processes.delete(name);
+        }
+
+        // Remove the config from the options.
+        const optionsIndex = this.options.processes.findIndex( process=>(process.name === name) );
+        if (optionsIndex !== -1)
+        {
+            // Remove the process options form the array, and save the options back to file.
+            this.options.processes.splice(optionsIndex, 1);
+            this.save();
+        }
+
+        // If it does not exist then report error.
+        return (process ? {status: 'ok'} : {error: `Can not remove processes that does not exist ${name}`});
+    }
+
+    /**
+     * Starts all the processes that are not already running.
+     */
+    startAll()
+    {
+        // Traverse all the processes and start them.
+        this.processes.forEach( process=>process.start() );
+        return {status: 'ok'};
+    }
+
+    /**
+     * Stops all the currently running processes.
+     */
+    stopAll()
+    {
+        // Traverse all the processes and stop them all.
+        this.processes.forEach( process=>process.stop() );
+        return {status: 'ok'};
+    }
+
+    /**
+     * Restarts all the currently running processes.
+     */
+    restartAll()
+    {
+        // Traverse all the processes and restart them all.
+        this.processes.forEach( process=>process.restart() );
+        return {status: 'ok'};
+    }
+
+    /**
+     * Starts the process with the given name.
+     * @param {string} name - The name of the process.
+     */
+    start(name)
+    {
+        // Get the process from the manager.
+        const process = this.processes.get(name);
+        if (!process) return {error: `Process does not exist: ${name}`};
+
+        // Stop the process and return the result.
+        process.start();
+        return {status: 'ok'};
+    }
+
+    /**
+     * Stops the process with the given name if it is running.
+     * @param {string} name - The name of the process.
+     */
+    stop(name)
+    {
+        // Get the process from the manager.
+        const process = this.processes.get(name);
+        if (!process) return {error: `Process does not exist: ${name}`};
+
+        // Stop the process and return the result.
+        process.stop();
+        return {status: 'ok'};
+    }
+
+    /**
+     * Restarts the process with the given name. If is stopped it will be started.
+     * @param {string} name - The name of the process.
+     */
+    restart(name)
+    {
+        // Get the process from the manager.
+        const process = this.processes.get(name);
+        if (!process) return {error: `Process does not exist: ${name}`};
+
+        // Stop the process and return the result.
+        process.restart();
+        return {status: 'ok'};
+    }
+
+    /**
+     * Writes the given message to the set log file or console based on set options. The stored log to cache and file are in a JSON format, 
+     * this will allow users to search, sort and filter logs.
+     * 
+     * @param {string} message - The message to log.
+     * @param {string} [type=log] - The type of message to log. This could be log, or error.
+     */
+    log(message, type = 'log', owner = 'MANAGER')
+    {
+        // Create the log object.
+        const log = {
+            type: type.toUpperCase(),
+            timestamp: Date.now(),
+            owner: owner,
+            message: message.toString().trim()
+        };
+
+        // Push the log to the log cache list if specified according to the options.
+        if (!this.options.onlyCacheErrorLogs || log.type === 'ERROR')
+        {
+            this.logCache.unshift(log);
+
+            // If we are at the max log cache then remove the last message.
+            if (this.options.maxLogCache < this.logCache.length) this.logCache.pop();
+        }
+
+        // Append the message to the log file if provided if specified.
+        if (this.options.logPath) fs.writeFileSync( path.resolve(process.argv[1], '../', this.options.logPath), JSON.stringify(log) + ',\n', {flag: 'a'} );
+
+        // Write the message to the console is specified as well.
+        if (this.options.logToConsole) console[type.toLowerCase()](`${log.type} (${this.constructor.formatDate(new Date(log.timestamp))}) ${log.owner}: ${log.message}`);
+    }
+
+    /**
+     * This is an alias to log with a set type of 'error'.
+     * @param {string} message - The message to log.
+     * @param {string} owner - The name of the owner of this message.
+     */
+    logError(message, owner) { this.log(message, 'error', owner); }
+
+    /**
+     * Returns a string representation fo the given date time with the following format: "YYYY-MM-DD hh:mm:ss".
+     * @param {Date} date - The date to format.
+     * @returns {string} - The format date.
+     */
+    static formatDate(date) {  return `${date.getFullYear()}-${(date.getMonth()+1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`; }
+
+    /**
+     * Saves the options back to the options file.
+     */
+    save() { fs.writeFileSync(this.optionsPath, JSON.stringify(this.options, null, 2)); }
+}
+
+// Export the class
+Manager.namespace = 'DEDA.OS.Service.Manager';
+module.exports = Manager;
+};

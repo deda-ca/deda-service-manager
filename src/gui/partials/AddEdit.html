@@ -1,0 +1,90 @@
+<div id="AddEditModal" class="modal fade" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Process</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+            </div>
+            <div class="modal-body">
+
+                <form>
+                    <div class="form-group">
+                        <label for="name">Name</label>
+                        <input id="name" ng-model="process.name" type="text" class="form-control form-control-sm" aria-describedby="nameHelp"/>
+                        <small id="nameHelp" class="form-text text-muted">The name must be unique and is used to identify this process.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="command">Command</label>
+                        <input id="command" ng-model="process.command" type="text" class="form-control form-control-sm"/>
+                    </div>
+                    <div class="form-group">
+                        <label for="args">Arguments</label>
+                        <textarea id="args" ng-model="process.args_" ng-bind="process.args.join('\n')" class="form-control form-control-sm" wrap="off"></textarea>
+                        <small id="argsHelp" class="form-text text-muted">Place each argument on it's own line.</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="cwd">Working Directory</label>
+                        <input id="cwd" ng-model="process.cwd" type="text" class="form-control form-control-sm"/>
+                    </div>
+                    <div class="form-group form-check">
+                        <input id="shell" ng-model="process.shell" type="checkbox" class="form-check-input"/>
+                        <label class="form-check-label" for="shell">Run within a shell</label>
+                    </div>
+
+
+                    <div class="form-group form-check">
+                        <input id="autoStart" ng-model="process.autoStart" type="checkbox" class="form-check-input"/>
+                        <label class="form-check-label" for="autoStart">Automatically start</label>
+                    </div>
+
+                    <div class="form-group form-check">
+                        <input id="runForever" ng-model="process.runForever" type="checkbox" class="form-check-input"/>
+                        <label class="form-check-label" for="runForever">Run forever (restart if process crashes)</label>
+                    </div>
+
+                    <div class="form-group form-check">
+                        <button class="btn btn-sm btn-primary" type="button" data-toggle="collapse" data-target=".multi-collapse" aria-expanded="false" aria-controls="waitBeforeRestartControl maxConsecutiveRestartsControl resetRestartCountAfterControl" >Advanced Options</button>
+                    </div>
+
+                    <div class="collapse multi-collapse form-group row" id="waitBeforeRestartControl">
+                        <label for="waitBeforeRestart" class="col-sm-6 col-form-label">Wait before restarting</label>
+                        <div class="col-sm-6">
+                            <div class="input-group input-group-sm">
+                                <input id="waitBeforeRestart" ng-model="process.waitBeforeRestart" type="number" class="form-control" aria-describedby="waitBeforeRestartType"/>
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="waitBeforeRestartType">ms</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="collapse multi-collapse form-group row" id="maxConsecutiveRestartsControl">
+                        <label for="maxConsecutiveRestarts" class="col-sm-6 col-form-label">Max consecutive restarts</label>
+                        <div class="col-sm-6"><input id="maxConsecutiveRestarts" ng-model="process.maxConsecutiveRestarts" type="number" class="form-control form-control-sm"/></div>
+                    </div>
+                    <div class="collapse multi-collapse form-group row" id="resetRestartCountAfterControl">
+                        <label for="resetRestartCountAfter" class="col-sm-6 col-form-label">Reset error counter after</label>
+                        <div class="col-sm-6">
+                            <div class="input-group input-group-sm">
+                                <input id="resetRestartCountAfter" ng-model="process.resetRestartCountAfter" type="number" class="form-control" aria-describedby="resetRestartCountAfterType"/>
+                                <div class="input-group-append">
+                                    <span class="input-group-text" id="resetRestartCountAfterType">s</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <textarea id="description" ng-model="process.description" class="form-control form-control-sm"></textarea>
+                    </div>
+                </form>
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" ng-click="process._name ? control.update(process) : control.add(process)">Save changes</button>
+            </div>
+        </div>
+    </div>
+</div>

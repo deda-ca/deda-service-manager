@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: Process.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: Process.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>{
+"use strict";
+
+// Define the required modules for this class.
+const fs = require('fs');
+const path = require('path');
+const child_process = require('child_process');
+
+// Used for validation.
+const Joi = require('joi');
+
+
+/**
+ * This class is responsible for creating, and starting a child process and ensuring it stays running is required.
+ * The API will also allow to start, stop and restart a process.
+ * 
+ * @class
+ * @memberof DEDA-OS-Service
+ * @author Charbel Choueiri &lt;charbel.choueiri@gmail.com>
+ */
+class Process
+{
+    /**
+     * Creates a new class with the given options.
+     * @param {DEDA-OS-Service.Process.DefaultOptions} options See [validateOptions()]{@link DEDA-OS-Service.Process.validateOptions} for more details.
+     */
+    constructor(options, manager)
+    {
+        /**
+         * A pointer the parent manager class. This is mainly used for message logging and error reporting.
+         * @member {DEDA-OS-Service.Manager}
+         */
+        this.manager = manager;
+
+        /**
+         * The node.js child_process subProcess instance of this process.
+         * @member {child_process}
+         */
+        this.subProcess = null;
+
+        /**
+         * Keeps track of the number of consecutive restarts within a set time limit in-order to determine whether to restart the application or just give up.
+         * @member {number}
+         */
+        this.consecutiveRestarts = 0;
+
+        /**
+         * The last time stamp the process has been restarted. Keeps track of the running time of the process and also used to determine consecutive errors.
+         * @member {number}
+         */
+        this.lastStartedDateTime = 0;
+
+        /**
+         * The class options as defined by [validateOptions()]{@link DEDA-OS-Service.Process.validateOptions}
+         * On initialization the constructor options parameters are merged with the default options.
+         * @member {DEDA-OS-Service.Process.DefaultOptions}
+         */
+        this.options = this.constructor.optionValidation(options, {throwOnError: true}).value;
+    }
+
+    /**
+     * @typedef {Object} Options
+     * @property {string} name - The unique name of this process.
+     * @property {string} [description] - Description of this process.
+     * @property {string} command - The command to run.
+     * @property {string[]} args - List of string arguments.
+     * @property {string} [cwd=null] - Current working directory of the child process.
+     * @property {object} [env=null] - Environment key-value pairs.
+     * @property {boolean|string} [shell=true] -  If true, runs command inside of a shell. Uses '/bin/sh' on UNIX, and process.env.ComSpec on Windows. A different shell can be specified as a string. See Shell Requirements and Default Windows Shell
+     * @property {boolean} [autoStart=true] - Defines whether to auto start the process when the Service Manager first launches.
+     * @property {boolean} [runForever=true] - Defines whether to auto restart the process if it crashes unexpectedly.
+     * @property {number} [waitBeforeRestart=5000] - Number of milliseconds to wait before restarting the process if it crashes.
+     * @property {number} [maxConsecutiveRestarts=3] - The maximum number of restart attempts before stop trying to restart the process.
+     * @property {number} [resetRestartCountAfter=60000] - The number of milliseconds the process needs to run to deem it stable. This is linked to the maxConsecutiveRestarts.
+     * @memberof DEDA-OS-Service.Process
+     */
+
+    /**
+     * Returns the default options, returns the Jio validation schema or validates the given options and returns the result.
+     * The point of this method is to provide a single function that will satisfy all the validation requirements.
+     */
+    static optionValidation(object, options)
+    {
+        // Set the default values for the given options. No need to to valid the options for the options :).
+        options = Object.assign({getSchema: false, getDefaults: false, throwOnError: false}, options);
+
+        // Create the schema for the validation.
+        const schema = Joi.object().keys({
+            name: Joi.string().min(1).required(),
+            description: Joi.string(),
+
+            command: Joi.string().min(1).required(),
+            args: Joi.array().default([]),
+            cwd: Joi.string().allow(null).default(null),
+            env: Joi.object().allow(null).default(null),
+            shell: Joi.boolean().default(true),
+
+            autoStart: Joi.boolean().default(true),
+            runForever: Joi.boolean().default(true),
+            waitBeforeRestart: Joi.number().integer().default(5000),
+            maxConsecutiveRestarts: Joi.number().integer().default(3),
+            resetRestartCountAfter: Joi.number().integer().default(60000),
+
+            stdoutFile: Joi.alternatives([Joi.boolean(), Joi.string().min(2)]).default(true),
+            stderrFile: Joi.alternatives([Joi.boolean(), Joi.string().min(2)]).default(true)
+        }).options({ stripUnknown: true });
+
+        // If we are to return the schema then return it as is. Otherwise if get default value then update the given options.
+        if (options.getSchema) return schema;
+        else if (options.getDefaults) object = {name: '-', command: '--'};
+
+        // Finally validate the options and return the results.
+        const result = Joi.validate(object, schema);
+        if (result.error &amp;&amp; options.throwOnError) throw result.error;
+        else return result;
+    }
+
+    /**
+     * Starts the process if it not already running.
+     */
+    start()
+    {
+        // If already running then do nothing.
+        if (this.isRunning()) return;
+
+        try {
+            // Create the options object form the class options.
+            let options = {shell: this.options.shell};
+            if (this.options.cwd) options.cwd = this.options.cwd;
+            if (this.options.env) options.env = this.options.env;
+
+            // Start the child process, attached all the events and wait for it to start.
+            this.subProcess = child_process.spawn(this.options.command, this.options.args, options);
+        } catch (error) {
+            return this.manager.log(`And error occurred while spawning child process: ${error.toString()}`, 'error', this.options.name);
+        }
+
+        // Update the local variables for the process start information.
+        this.lastStartedDateTime = Date.now();
+
+        // Attached to the close event to restart the process if we need to.
+        this.subProcess.on('close', code=>this.onClose(code));
+
+        // If the options specifies to output the process stdout information somewhere then listen to data coming from the stream.
+        if (this.options.stdoutFile) this.subProcess.stdout.on('data', data=>{
+
+            // If set to true then output the data to the global log file. Otherwise output the data to the process specific file.
+            if (this.options.stdoutFile === true) this.manager.log(data, 'log', this.options.name);
+            else fs.writeFileSync( path.resolve(this.options.stdoutFile), data, {flag: 'a'} );
+        });
+
+        // If the options specifies to output the process stdout information somewhere then listen to data coming from the stream.
+        if (this.options.stderrFile) this.subProcess.stderr.on('data', data=>{
+
+            // If set to true then output the data to the global log file. Otherwise output the data to the process specific file.
+            if (this.options.stderrFile === true) this.manager.log(data, 'error', this.options.name);
+            else fs.writeFileSync( path.resolve(this.options.stderrFile), data, {flag: 'a'} );
+        });
+    }
+
+    /**
+     * Sends the kill command to the process to stop it.
+     */
+    stop()
+    {
+        // If there is no process running then do nothing.
+        if (!this.isRunning()) return;
+
+        // Set the flag to force stop the process and not restart it if auto restart is set to true.
+        this.subProcess.forceStop = true;
+
+        // Send the kill signal to the process
+        this.subProcess.kill();
+    }
+
+    /**
+     * Kills the processes, waits for it to stop then starts it again. The process will restart immediately after it is terminated regardless of 
+     */
+    restart()
+    {
+        // If the process is running then stop it and restart it.
+        if (this.isRunning())
+        {
+            // Set a global variable to tell the process to restart after it has stopped.
+            this.subProcess.forceRestart = true;
+
+            // Send the stop signal to the process.
+            this.stop(true);
+        }
+        // Otherwise just start it.
+        else this.start();
+    }
+
+    /**
+     * This method is invoked by the child process when the application running is closed. This will check the
+     * options and either restart the process or do nothing.
+     * @param {number} code - The return code of the closed process.
+     */
+    onClose(code)
+    {
+        // Temporary store the possible set flags and clear the class pointers.
+        const forceStop = this.subProcess.forceStop;
+        const forceRestart = this.subProcess.forceRestart;
+        const lastStartedAt = this.lastStartedDateTime;
+
+        this.subProcess = null;
+        this.lastStartedDateTime = 0;
+
+        // If the force Restart variable is set to true then restart the process immediately regardless of the settings.
+        if (forceRestart) return this.start();
+        // otherwise the process was forced stopped by the API then do not restart it.
+        else if (!this.options.runForever || forceStop) return;
+
+        // If it was not forced to stop and the process has stop within a set mini time period then it has probably crashed, update the counter.
+        if ( (Date.now() - lastStartedAt) &lt; this.options.resetRestartCountAfter ) this.consecutiveRestarts++;
+        // Otherwise it has been running for a while then this was a random crash, reset the counter.
+        else this.consecutiveRestarts = 0;
+
+        // If the max consecutive restarts is reached and the time limit has not elapsed then log error and do not restart it.
+        if (this.consecutiveRestarts >= this.options.maxConsecutiveRestarts) this.manager.log(`The process ${this.options.name} has reached the maximum consecutive restarts and will be restarted.`, 'error', this.options.name);
+        // Otherwise all constraints passed, restart the application after the set wait timer before restart.
+        else setTimeout( ()=>this.start(), this.options.waitBeforeRestart);
+    }
+
+    /**
+     * Returns true if the process is running, otherwise returns false.
+     * @returns {boolean} True if running otherwise false.
+     */
+    isRunning() {  return (this.subProcess &amp;&amp; !this.subProcess.killed); }
+}
+
+// Export the class
+Process.namespace = 'DEDA.OS.Service.Process';
+module.exports = Process;
+};</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="@memberof%2520DEDA-OS-Service.Controller.html">Controller</a></li><li><a href="DEDA-OS-Service.Manager.html">Manager</a></li><li><a href="DEDA-OS-Service.Process.html">Process</a></li><li><a href="DEDA-OS-Service.WebAPI.html">WebAPI</a></li></ul><h3>Namespaces</h3><ul><li><a href="DEDA-OS-Service.html">DEDA-OS-Service</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc3/jsdoc">JSDoc 3.5.5</a> on Thu Jul 05 2018 20:44:57 GMT-0400 (Eastern Daylight Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

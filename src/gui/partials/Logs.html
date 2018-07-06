@@ -1,0 +1,28 @@
+<div>
+    <table class="table table-sm mt-5">
+        <caption>List of cached logs</caption>
+        <thead>
+            <tr>
+                <th style="width: 24px"></th>
+                <th scope="col">Type</th>
+                <th scope="col">Date</th>
+                <th scope="col">Owner</th>
+                <th scope="col">Message</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr ng-repeat="log in logs" ng-class="{LOG: '', ERROR: 'bg-danger', WARN: 'bg-warning'}[log.type]">
+                <td ng-switch="log.type">
+                    <i ng-switch-when="LOG" class="fas fa-info"></i>
+                    <i ng-switch-when="ERROR" class="fas fa-exclamation-triangle"></i>
+                    <i ng-switch-when="DEBUG" class="fas fa-bug"></i>
+                    <i ng-switch-default class="fas fa-exclamation"></i>
+                </td>
+                <td>{{ log.type }}</td>
+                <td>{{ control.formatDateTime(log.timestamp) }}</td>
+                <td>{{ log.owner }}</td>
+                <td>{{ log.message }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>

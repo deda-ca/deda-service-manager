@@ -1,0 +1,27 @@
+<table class="table table-sm table-striped table-hover">
+    <caption>List of services</caption>
+    <thead>
+        <tr>
+            <th style="width: 24px"></th>
+            <th style="width: 24px"></th>
+            <th scope="col">Name</th>
+            <th scope="col">Running For</th>
+            <th scope="col">Status</th>
+            <th style="width: 24px"></th>
+            <th style="width: 24px"></th>
+            <th style="width: 24px"></th>
+        </tr>
+    </thead>
+    <tbody >
+        <tr ng-repeat="process in processes">
+            <td><button type="button" class="btn btn-sm btn-light" ng-click="control.edit(process.name)" data-toggle="tooltip" title="Edit this process details."><i class="fas fa-edit"></i></button></td>
+            <td><button type="button" class="btn btn-sm btn-light" ng-click="control.remove(process.name)" data-toggle="tooltip" title="Delete/Remove this process permanently."><i class="fas fa-trash"></i></button></td>
+            <td data-toggle="tooltip" title="{{ process.description }}">{{ process.name }}</td>
+            <td>{{ process.isRunning ? control.formatElapsedTime(process.startedAt) : '-' }}</td>
+            <td>{{ process.isRunning ? 'Running' : 'Stopped' }}</td>
+            <td><button type="button" class="btn btn-sm btn-light" ng-disabled="process.isRunning" ng-click="control.start(process.name)" data-toggle="tooltip" title="Starts this process if it is not already running."><i class="fas fa-play"></i></button></td>
+            <td><button type="button" class="btn btn-sm btn-light" ng-disabled="!process.isRunning" ng-click="control.stop(process.name)" data-toggle="tooltip" title="Stops the process if it is currently running."><i class="fas fa-stop"></i></button></td>
+            <td><button type="button" class="btn btn-sm btn-light" ng-disabled="!process.isRunning" ng-click="control.restart(process.name)" data-toggle="tooltip" title="Restarts the process if it is currently running."><i class="fas fa-retweet"></i></button></td>
+        </tr>
+    </tbody>
+</table>
