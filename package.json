@@ -1,6 +1,6 @@
 {
   "name": "deda-service-manager",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "This is a service manager that provides a web interface to create, remove, start, stop, and restart child processes within itself. The service manager can also keep-alive/restart a process that crashes or stops (run forever).",
   "main": "index.js",
   "scripts": {
@@ -11,10 +11,16 @@
     "url": "git+https://github.com/DEDAjs/deda-service-manager.git"
   },
   "keywords": [
+    "process",
     "service",
     "manager",
+    "process manager",
     "service manager",
-    "run forever"
+    "run forever",
+    "service manager gui",
+    "service manager ui",
+    "process manager interface",
+    "process manager gui"
   ],
   "author": "Charbel Choueiri <charbel.choueiri@gmail.com>",
   "license": "MIT",
